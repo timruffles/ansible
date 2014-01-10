@@ -115,10 +115,10 @@ options:
     aliases: []
   state:
     description:
-      - Set the state of the container
+      - Set the state of the container/image
     required: false
     default: present
-    choices: [ "present", "stopped", "absent", "killed", "restarted" ]
+    choices: [ "present", "stopped", "absent", "killed", "restarted", "pulled" ]
     aliases: []
   privileged:
     description:
@@ -190,6 +190,7 @@ try:
     import docker.client
     from requests.exceptions import *
     from urlparse import urlparse
+    import json
 except ImportError, e:
     print "failed=True msg='failed to import python module: %s'" % e
     sys.exit(1)
@@ -391,6 +392,13 @@ class DockerManager:
             self.client.restart(i['Id'])
             self.increment_counter('restarted')
 
+    def pull(self, image):
+      result = self.client.pull(image,stream=True)
+      for progress in result:
+        parsed = json.loads(progress)
+        if parsed["status"] == "Download complete":
+          return "complete"
+
 def main():
     module = AnsibleModule(
         argument_spec = dict(
@@ -410,7 +418,7 @@ def main():
             env             = dict(),
             dns             = dict(),
             detach          = dict(default=True, type='bool'),
-            state           = dict(default='present', choices=['absent', 'present', 'stopped', 'killed', 'restarted']),
+            state           = dict(default='present', choices=['absent', 'present', 'stopped', 'killed', 'restarted','pulled']),
             debug           = dict(default=False, type='bool'),
             privileged      = dict(default=False, type='bool'),
             lxc_conf        = dict(default=None)
@@ -419,7 +427,13 @@ def main():
 
     try:
         manager = DockerManager(module)
+          
         state = module.params.get('state')
+
+        if state == 'pulled':
+          result = manager.pull(module.params.get('image'))
+          return module.exit_json(failed=True, changed=True, msg="Something", ansible_facts=result)
+
         count = int(module.params.get('count'))
 
         if count < 1:
